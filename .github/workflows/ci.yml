@@ -104,6 +104,11 @@ jobs:
           name: tickets-dist-${{ github.sha }}
           path: deploy/test/tickets
 
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.7"
+
       - name: Masked Token Check
         env:
           DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
