@@ -24,8 +24,8 @@ class TicketService:
             raise ValueError("Title cannot be empty.")
 
         priority_norm = priority.upper().strip() if priority else ""
-        # if priority_norm not in ALLOWED_PRIORITIES:
-        #     raise ValueError(f"Invalid priority '{priority}'. Allowed: {ALLOWED_PRIORITIES}")
+        if priority_norm not in ALLOWED_PRIORITIES:
+            raise ValueError(f"Invalid priority '{priority}'. Allowed: {ALLOWED_PRIORITIES}")
 
         status_norm = status.upper().strip() if status else "NEW"
         if status_norm not in ALLOWED_STATUSES:
