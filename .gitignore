@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.csv
+!tickets.csv.example
+dist/
+deploy/
+*.txt
+!requirements.txt

@@ -1,0 +1,134 @@
+name: CI-CD Tickets Pipeline
+
+on:
+  push:
+    branches: [ "main", "hotfix/**" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  APP_PORT: "8103"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    container:
+      image: python:3.12.7-slim
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Environment Info
+        run: |
+          python --version
+          echo "Commit SHA: ${{ github.sha }}"
+
+      - name: Compile Python Syntax
+        run: python -m py_compile tickets.py tests/test_tickets.py
+
+      - name: Reject Tabs at Line Starts (Variant 3)
+        run: |
+          python -c '
+          import glob, sys
+          failed = False
+          for path in glob.glob("**/*.py", recursive=True):
+              with open(path, "r", encoding="utf-8") as f:
+                  for num, line in enumerate(f, 1):
+                      if line.startswith("\t"):
+                          print(f"Leading tab detected in {path} at line {num}")
+                          failed = True
+          if failed:
+              sys.exit(1)
+          print("OK: No leading tabs found.")
+          '
+
+  test:
+    needs: validate
+    runs-on: ubuntu-latest
+    container:
+      image: python:3.12.7-slim
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Unit Tests
+        run: python -m unittest discover -s tests -v
+
+  package:
+    needs: test
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/hotfix/') || startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    container:
+      image: python:3.12.7-slim
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build dist and manifest
+        run: |
+          mkdir -p dist
+          cp tickets.py README.md Dockerfile tickets.csv.example dist/
+          cat <<EOF > dist/manifest.txt
+          Project: Tickets Service
+          Commit_SHA: ${{ github.sha }}
+          Run_ID: ${{ github.run_id }}
+          App_Port: $APP_PORT
+          Files:
+          - tickets.py
+          - README.md
+          - Dockerfile
+          - tickets.csv.example
+          - manifest.txt
+          EOF
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tickets-dist-${{ github.sha }}
+          path: dist/
+          retention-days: 7
+
+  deploy_test:
+    needs: package
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: test/tickets
+      url: http://localhost:8103
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tickets-dist-${{ github.sha }}
+          path: deploy/test/tickets
+
+      - name: Masked Token Check
+        env:
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+        run: |
+          if [ -z "$DEPLOY_TOKEN" ]; then
+            echo "DEPLOY_TOKEN is missing"
+            exit 1
+          fi
+          echo "Token verified. Length: ${#DEPLOY_TOKEN} characters."
+
+      - name: Smoke Test in test/tickets
+        run: |
+          cd deploy/test/tickets
+          python -c '
+          from tickets import TicketService
+          svc = TicketService("smoke_tickets.csv")
+          res = svc.create_ticket("SMOKE-1", "Smoke Test Ticket", "HIGH", "NEW", "deployer")
+          assert res["priority"] == "HIGH"
+          read_back = svc.get_ticket("SMOKE-1")
+          assert read_back is not None and read_back["title"] == "Smoke Test Ticket"
+          print("Smoke test successfully passed!")
+          '
+          cat <<EOF > deployment.txt
+          Deployment Status: SUCCESS
+          Environment: test/tickets
+          App Port: $APP_PORT
+          Verified by: smoke_test.py
+          EOF

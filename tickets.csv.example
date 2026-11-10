@@ -1,0 +1,3 @@
+ticket_id,title,priority,status,author
+TCK-101,Database connection timeout,HIGH,NEW,admin
+TCK-102,Typo in login interface,LOW,RESOLVED,qa_engineer
